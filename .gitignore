@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# Things added after github auto generation of all the above
+apiConfig.json
+/data/
+.idea/
+

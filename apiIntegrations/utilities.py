@@ -5,6 +5,7 @@ import os
 from bs4 import BeautifulSoup
 import unicodedata
 import re
+import pint
 
 COMPARISON_SKIP_COLS = {
     'channels': [],
@@ -94,13 +95,48 @@ def getTextFromHTML(html):
     t = unicodedata.normalize('NFKD', raw)
     return t
 
-def getAlpha(text):
+def dropDigits(text):
+    logging.info(f"Dropped digits: {len([d for d in text if d.isdigit()])}.")
     return ''.join([i for i in text if not i.isdigit()])
 
+def splitCompoundedWords(text):
+    pattern = re.compile(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))')
+    logging.info(f"Split compounded words: {len(pattern.findall(text))}.")
+    return pattern.sub(r'\1 ', text)
+
+def dropSpecialChars(text):
+    pattern = re.compile('[,.!?:%$£\[\]“”()]')
+    logging.info(f"Dropped special characters: {len(pattern.findall(text))}. (Does not include dash, which is handled separately.)")
+    t = pattern.sub('', text)
+    return re.sub(' – ', ' ', t)
+
+def dropUnits(text):
+    uR = list(pint.UnitRegistry())
+    pattern = re.compile(' | '.join(uR))
+    logging.info(f"Dropped units: {pattern.findall(text)}.")
+    return pattern.sub(' ', text)
+
 def getPlainTextFromHTML(col):
+    # TODO: Log document id in each of these functions. Or record as extra columns the number of dropped items for each.
     assert isinstance(col, pd.Series)
-    raw = col.apply(lambda x: getTextFromHTML(x))
-    lowerAlpha = raw.apply(lambda y: getAlpha(y.lower()))
-    plainTextCol = lowerAlpha.apply(lambda z: re.sub('[,.!?]', '', z))
-    return plainTextCol
+
+    # Get raw text, removing html tags
+    raw = col.apply(lambda w: getTextFromHTML(w))
+
+    # Drop numeric characters and lowercase everything
+    alpha = raw.apply(lambda x: dropDigits(x))
+
+    # Drop all punctuation and special characters
+    noSpecials = alpha.apply(lambda y: dropSpecialChars(y))
+
+    # Split compound words by capital letter and lower all text
+    split = noSpecials.apply(lambda z: splitCompoundedWords(z))
+
+    # Drop all punctuation, special characters, and units
+    noUnits = split.apply(lambda a: dropUnits(a))
+
+    # Lowercase everything
+    lower = noUnits.apply(lambda b: b.lower())
+
+    return lower
 

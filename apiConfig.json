@@ -1,0 +1,6 @@
+{
+    "apiKey_SCOPUS": "546ace0acc9715edd74e3aecabe42587",
+    "clientID_getAbstract": "libraryapi-client-demo-tobias-fechner",
+    "clientSecret_getAbstract": "bEpCU2JjT3lreEhieDlKWEpWcGI",
+    "tokenURL_getAbstract": "https://www.getabstract.com/api/oauth/token"
+}

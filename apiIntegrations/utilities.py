@@ -89,7 +89,7 @@ def tryOverwriteFile(data, filePath):
 
     return
 
-def getTextFromHTML(html):
+def dropHTML(html):
     soup = BeautifulSoup(html, features='lxml')
     raw = soup.get_text()
     t = unicodedata.normalize('NFKD', raw)
@@ -121,7 +121,7 @@ def getPlainTextFromHTML(col):
     assert isinstance(col, pd.Series)
 
     # Get raw text, removing html tags
-    raw = col.apply(lambda w: getTextFromHTML(w))
+    raw = col.apply(lambda w: dropHTML(w))
 
     # Drop numeric characters and lowercase everything
     alpha = raw.apply(lambda x: dropDigits(x))

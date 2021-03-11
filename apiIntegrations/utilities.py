@@ -132,7 +132,7 @@ def getPlainTextFromHTML(col):
     # Split compound words by capital letter and lower all text
     split = noSpecials.apply(lambda z: splitCompoundedWords(z))
 
-    # Drop all punctuation, special characters, and units
+    # Drop all units
     noUnits = split.apply(lambda a: dropUnits(a))
 
     # Lowercase everything

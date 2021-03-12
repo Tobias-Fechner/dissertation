@@ -1,19 +1,24 @@
+"""
+Module used to pre-process raw text-like data. Can apply to strings containing HTML tags, for example. This module should contain
+all functionality necessary to take in any arbitrary text-like data, and reduce it to clean, normalised text ready for
+use to train topic models.
+
+Does not include tokenization. Therefore outputs should be lowercase strings of words, not lists of tokens.
+"""
+
 import pandas as pd
-import nltk
 from bs4 import BeautifulSoup
 import unicodedata
 import logging
 import re
 import pint
+import string
 
-def tokenize(text):
-    return nltk.word_tokenize(text)
-
-def getWordsVocab(tokens):
-    text = nltk.Text(tokens)
-    words = [w.lower() for w in text]
-    vocab = sorted(set(words))
-    return words, vocab
+REGEX_PATTERNS = {
+    'compoundedWords': re.compile(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))'),
+    'specialCharacters': re.compile(f'[{string.punctuation}]'),
+    'units': re.compile(' | '.join(list(pint.UnitRegistry())))
+}
 
 def dropHTML(html):
     soup = BeautifulSoup(html, features='lxml')
@@ -26,45 +31,58 @@ def dropDigits(text):
     return ''.join([i for i in text if not i.isdigit()])
 
 def splitCompoundedWords(text):
-    pattern = re.compile(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))')
+    pattern = REGEX_PATTERNS['compoundedWords']
     logging.info(f"Split compounded words: {len(pattern.findall(text))}.")
     return pattern.sub(r'\1 ', text)
 
 def dropSpecialChars(text):
-    pattern = re.compile('[,.!?:%$£\[\]“”()]')
+    pattern = REGEX_PATTERNS['specialCharacters']
     logging.info(f"Dropped special characters: {len(pattern.findall(text))}. (Does not include dash, which is handled separately.)")
     t = pattern.sub('', text)
     return re.sub(' – ', ' ', t)
 
 def dropUnits(text):
-    uR = list(pint.UnitRegistry())
-    pattern = re.compile(' | '.join(uR))
+    pattern = REGEX_PATTERNS['units']
     logging.info(f"Dropped units: {pattern.findall(text)}.")
     return pattern.sub(' ', text)
 
-def cleanHTML(col):
+def cleanHTML(s):
     # TODO: Log document id in each of these functions. Or record as extra columns the number of dropped items for each.
-    assert isinstance(col, pd.Series)
+    assert isinstance(s, pd.Series)
 
     # Get raw text, removing html tags
-    raw = col.apply(lambda w: dropHTML(w))
+    print("Dropping html tags.")
+    raw = s.apply(lambda w: dropHTML(w))
 
     # Drop numeric characters and lowercase everything
+    print("Dropping digits.")
     alpha = raw.apply(lambda x: dropDigits(x))
 
     # Drop all punctuation and special characters
+    print("Dropping special characters.")
     noSpecials = alpha.apply(lambda y: dropSpecialChars(y))
 
     # Split compound words by capital letter and lower all text
+    print("Splitting compounded words.")
     split = noSpecials.apply(lambda z: splitCompoundedWords(z))
 
     # Drop all units
+    print("Dropping units.")
     noUnits = split.apply(lambda a: dropUnits(a))
 
     # Lowercase everything
+    print("Making lower case.")
     lower = noUnits.apply(lambda b: b.lower())
 
+    assert isHygienic(lower), "Text was cleaned but still fails cleanliness test."
     return lower
 
+def isHygienic(text):
+    """
+    Function checks input text for all data cleaning processes defined so far and returns boolean indicating if text is clean for each case or not.
+    :param text: input string
+    :return: boolean indicating cleanliness
+    """
+    return all(len(pattern.findall(text)) == 0 for pattern in REGEX_PATTERNS.values())
 
 

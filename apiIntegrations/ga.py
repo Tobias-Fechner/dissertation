@@ -187,4 +187,6 @@ def getAllSummaries(sample=False):
 
     return data
 
+def addIntroToContent(data):
+    return data.apply(lambda x: x['introHtml'] + x['contentHtml'], axis=1)
 

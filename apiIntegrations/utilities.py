@@ -69,7 +69,7 @@ def tryOverwriteFile(data, filePath):
 def getApiColsOfInterest(api):
     assert isinstance(api, str), "Must pass api name as string."
     store = {
-        'ga': ['title', 'subtitle', 'author',  'publisher', 'introHtml', 'contentHtml', 'url'],
+        'ga': ['id', 'title', 'subtitle', 'author',  'publisher', 'introHtml', 'contentHtml', 'url'],
     }
 
     assert api in store.keys()

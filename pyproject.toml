@@ -17,6 +17,9 @@ lxml = "^4.6.2"
 Pint = "^0.16.1"
 nltk = "^3.5"
 scikit-learn = "^0.24.1"
+gensim = "^3.8.3"
+spacy = "^3.0.5"
+networkx = "^2.5"
 
 [tool.poetry.dev-dependencies]
 

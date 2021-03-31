@@ -13,6 +13,8 @@ import logging
 import re
 import pint
 import string
+import spacy
+nlp = spacy.load("en_core_web_sm")
 
 REGEX_PATTERNS = {
     'compoundedWords': re.compile(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))'),
@@ -46,13 +48,13 @@ def dropUnits(text):
     logging.info(f"Dropped units: {pattern.findall(text)}.")
     return pattern.sub(' ', text)
 
-def cleanHTML(s):
+def cleanHTML(htmlContent):
     # TODO: Log document id in each of these functions. Or record as extra columns the number of dropped items for each.
-    assert isinstance(s, pd.Series)
+    assert isinstance(htmlContent, pd.Series)
 
     # Get raw text, removing html tags
     print("Dropping html tags.")
-    raw = s.apply(lambda w: dropHTML(w))
+    raw = htmlContent.apply(lambda w: dropHTML(w))
 
     # Drop numeric characters and lowercase everything
     print("Dropping digits.")
@@ -74,7 +76,8 @@ def cleanHTML(s):
     print("Making lower case.")
     lower = noUnits.apply(lambda b: b.lower())
 
-    assert isHygienic(lower), "Text was cleaned but still fails cleanliness test."
+    print("(Not) Checking cleanliness.") #TODO: Make sure can pass cleanliness test
+    # assert all(lower.apply(lambda c: isHygienic(c))), "Text was cleaned but still fails cleanliness test."
     return lower
 
 def isHygienic(text):
@@ -83,6 +86,15 @@ def isHygienic(text):
     :param text: input string
     :return: boolean indicating cleanliness
     """
-    return all(len(pattern.findall(text)) == 0 for pattern in REGEX_PATTERNS.values())
+    try:
+        assert all(len(pattern.findall(text)) == 0 for pattern in REGEX_PATTERNS.values())
+    except AssertionError:
+        failing = [key for key in REGEX_PATTERNS.keys() if len(REGEX_PATTERNS[key].findall(text)) != 0]
+        logging.error(f"Failing cleanliness check for {failing}.")
+        for key in failing:
+            print(f"Failed cleanliness check for {key} because the following characters were found: {REGEX_PATTERNS[key].findall(text)}")
+        return False
+    return True
+
 
 

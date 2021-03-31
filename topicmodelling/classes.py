@@ -1,28 +1,13 @@
 import topicmodelling.utilities.clean
 import apiIntegrations.utilities
+
 import pandas as pd
-import pathlib
-import logging
-import nltk
-import itertools
+import numpy as np
+from tqdm import tqdm
 
-class Document:
-    def __init__(self, iD, text, language='en'):
-        assert topicmodelling.utilities.clean.isHygienic(text), "Must pass clean text data. Refer to module topicmodelling.utilities.clean."
+import pathlib, string, logging
 
-        self.id = iD
-        self.text = text
-        self.language = language
-
-        raise NotImplementedError
-
-    def getBagOfWords(self):
-        """
-        Take in text string, and create list of non-stopword words.
-        :return: list of words
-        """
-        stopwords = nltk.corpus.stopwords.words('english')
-        return sorted(set(word for word in self.text.split() if word not in stopwords))
+import nltk, spacy, gensim
 
 class Corpus:
     def __init__(self, name):
@@ -31,68 +16,127 @@ class Corpus:
         self.name = name
         self.source = None
         self.sourceType = None
+        self.raw = None
         self.data = None
-        self.vocabulary = None
+        self.dictionary = None
         self.location = None
 
-    def addData(self, source='ga', sourceType='api', filePath=r'C:\Users\Tobias Fechner\Documents\1_Uni\fyp\git_repo_fyp\data\apiIntegrations.ga\energy_environment_sustainableenergy_electricvehicles.csv'):
-
-        if sourceType == 'api':
-            sourceLoc = pathlib.Path(apiIntegrations.__file__).parent
-            assert source in [x.stem for x in sourceLoc.iterdir()], f"Source must be valid api if source type api chosen. {source} not in {[x.stem for x in sourceLoc.iterdir()]}."
-            logging.info(f"Data sourced from api {source}.")
-        else:
-            logging.info(f"Other data source type used: {sourceType}")
+    def addData(self, source='ga', sourceType='api'):
 
         self.source = source
         self.sourceType = sourceType
 
-        self.location = pathlib.Path(filePath)
+        dataDir = pathlib.Path(pathlib.Path.cwd().parent, 'data')
+        if self.source == 'ga' and self.sourceType == 'api':
+            parentDir = pathlib.Path(dataDir, f'{sourceType}Integrations.{source}')
+        else:
+            raise NotImplementedError
+
+        print("Available files: ")
+
+        availableFiles = [(count, f"{count}: {str(filePath.stem)}") for count, filePath in enumerate(parentDir.iterdir())]
+        print("\n".join(list(zip(*availableFiles))[1]))
+
+        selection = '-1'
+
+        while int(selection) not in list(zip(*availableFiles))[0]:
+            print("Specify file to select by number (esc to break):")
+            selection = input("--> ")
+            if selection == 'esc':
+                selection = ''
+                break
+
+        self.location = list(parentDir.iterdir())[int(selection)]
         assert self.location.exists(), "Filepath to data source does not exist."
         assert self.location.suffix == '.csv', "Must load data from csv."
 
-        data = pd.read_csv(self.location, index_col=0, usecols=apiIntegrations.utilities.getApiColsOfInterest(self.source))
-        cleanTextColName = 'clean'
+        self.raw = pd.read_csv(self.location, index_col=0, usecols=apiIntegrations.utilities.getApiColsOfInterest(self.source))
+        return
+
+    def updateDictionary(self, tokensProcessed):
+        self.dictionary = gensim.corpora.dictionary.Dictionary(tokensProcessed)
+
+        # Filter out words that occur in no less than 10 documents, or more than 50% of the documents.
+        self.dictionary.filter_extremes(no_below=3, no_above=0.6)
+        return
+
+    def checkDataClean(self):
+
+        textColName = 'text'
 
         # Check data is clean
         try:
-            assert all(topicmodelling.utilities.clean.isHygienic(text) for text in data[cleanTextColName])
+            assert all(topicmodelling.utilities.clean.isHygienic(text) for text in self.raw[textColName])
         except KeyError:
-            print("Column 'clean' not found. Please enter name of clean text column you would like to select:")
-            cleanTextColName = input("-->")
-            assert all(topicmodelling.utilities.clean.isHygienic(text) for text in data[cleanTextColName])
-            logging.info(f"Column {cleanTextColName} identified by user as containing clean text data.")
+            print(
+                f"Required column '{textColName}' not found. Please identify the column containing clean text data: \n{self.raw.columns}")
+            textColName = input("-->")
+            assert all(topicmodelling.utilities.clean.isHygienic(text) for text in self.raw[textColName])
+            logging.info(f"Column {textColName} identified by user as containing clean text data.")
         except AssertionError:
-            logging.debug("Failed to add data due to data cleanliness issues. Refer to module topicmodelling.utilities.clean.")
+            logging.debug(
+                "Failed to add data due to data cleanliness issues. Refer to module topicmodelling.utilities.clean.")
             raise AssertionError("Document text must be clean before storing in corpus.")
 
-        logging.info("Adding clean data to corpus.")
-        self.data = data
         return
 
-    def getBagsOfWords(self):
-        """
-        Convert column of text to column of bag of words.
-        :return: list of words
-        """
-        assert 'text' in self.data.columns, "Column 'text' required in corpus data table."
-        stopwords = nltk.corpus.stopwords.words('english')
-        self.data['bow'] = self.data['text'].apply(lambda x: sorted(set(word for word in x if word not in stopwords)))
+    def prepareData(self, texts):
+        assert isinstance(texts, pd.Series)
+
+        tokens = getTokens(texts)
+        tokensProcessed = cleanTokens(tokens)
+
+        self.updateDictionary(tokensProcessed)
+        dtm = tokensProcessed.apply(lambda x: self.dictionary.doc2bow(x))
+
+        self.data = pd.DataFrame(index=texts.index, data={
+            'texts': texts,
+            'tokens': tokens,
+            'tokensProcessed': tokensProcessed,
+            'dtm': dtm
+        })
         return
 
-    def updateVocabulary(self):
-        assert isinstance(self.data, pd.DataFrame), "No data present."
+def getTokens(texts):
+    assert isinstance(texts, pd.Series)
+    tqdm.pandas()
+    nlp = spacy.load("en_core_web_sm", disable=["tok2vec", "ner"])
+    logging.info("Getting tokens.")
+    return texts.progress_apply(lambda x: nlp(x))
 
-        # Check bag of words has been created for each document. If not, try to create now.
-        try:
-            assert 'bow' in self.data.columns
-        except AssertionError:
-            logging.warning("Bag of words must be generated for each document first before generating the corpus vocabulary. Trying to generate now.")
-            self.getBagsOfWords()
-            logging.info("Bag of words generated during update vocabulary since no column 'bow' existed in data.")
+def cleanTokens(tokens):
+    assert isinstance(tokens, pd.Series)
+    tqdm.pandas()
 
-        self.vocabulary = sorted(set(itertools.chain.from_iterable(self.data['bow'])))
-        return
+    stopwords = nltk.corpus.stopwords.words('english')
+    stopwords.extend(['could', 'also', 'get', 'use', 'us', 'since', 'would', 'may', 'however', 'well', 'must',
+                      'much', 'even', 'like', 'many', 'one', 'two', 'new', 'every', 'recommends',
+                      'large', 'less', 'more', 'though', 'yet', 'make', 'three', 'getabstract'])
+
+    logging.info("Getting useful words: dropping stopwords, punctuation, non-alpha and tokens with only one letter.")
+    docs = tokens.progress_apply(lambda x: getUsefulWords(x, stopwords))
+
+    logging.info("Getting bigrams.")
+    bigramModel = gensim.models.Phrases(docs, min_count=5)
+    bigrams = docs.progress_apply(lambda x: np.array([token for token in bigramModel[x] if '_' in token]))
+
+    return docs.apply(list) + bigrams.apply(list)
+
+def getUsefulWords(tokens, stopwords):
+    lemmas = np.array([token.lemma_.lower() for token in tokens])
+    maskStopwords = np.array([lemma not in stopwords for lemma in lemmas], dtype=bool)
+    maskPunctuation = np.array([lemma not in string.punctuation for lemma in lemmas], dtype=bool)
+    maskNumeric = np.array([lemma.isalpha() for lemma in lemmas], dtype=bool)
+    maskLength = np.array([len(lemma) > 1 for lemma in lemmas], dtype=bool)
+    return lemmas[maskStopwords & maskPunctuation & maskNumeric & maskLength]
+
+def getNounChunks(docText, stopwords):
+    chunksAsText = np.array([chunk.text for chunk in docText.noun_chunks if len(chunk) > 1])
+    chunksAsSpan = [chunk for chunk in docText.noun_chunks if len(chunk) > 1]
+    maskChunksStopwords = np.array([all(ch.text not in stopwords for ch in chunk) for chunk in chunksAsSpan],
+                                   dtype=bool)
+    maskChunksNumeric = np.array([all(ch.text.isalpha() for ch in chunk) for chunk in chunksAsSpan], dtype=bool)
+    return chunksAsText[maskChunksStopwords & maskChunksNumeric]
 
 
 

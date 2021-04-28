@@ -4,10 +4,17 @@ import apiIntegrations.utilities
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from abc import ABC, abstractmethod
 
-import pathlib, string, logging
+import pathlib, logging
+import spacy, gensim
 
-import nltk, spacy, gensim
+def getTokens(texts):
+    assert isinstance(texts, pd.Series)
+    tqdm.pandas()
+    nlp = spacy.load("en_core_web_sm", disable=["tok2vec", "ner"])
+    logging.info("Getting tokens.")
+    return texts.progress_apply(lambda x: nlp(x))
 
 class Corpus:
     def __init__(self, name):
@@ -84,7 +91,7 @@ class Corpus:
         assert isinstance(texts, pd.Series)
 
         tokens = getTokens(texts)
-        tokensProcessed = cleanTokens(tokens)
+        tokensProcessed = topicmodelling.utilities.clean.cleanTokens(tokens)
 
         self.updateDictionary(tokensProcessed)
         dtm = tokensProcessed.apply(lambda x: self.dictionary.doc2bow(x))
@@ -97,48 +104,51 @@ class Corpus:
         })
         return
 
-def getTokens(texts):
-    assert isinstance(texts, pd.Series)
-    tqdm.pandas()
-    nlp = spacy.load("en_core_web_sm", disable=["tok2vec", "ner"])
-    logging.info("Getting tokens.")
-    return texts.progress_apply(lambda x: nlp(x))
+class TopicModel(ABC):
+    def __init__(self):
+        self.model = None
 
-def cleanTokens(tokens):
-    assert isinstance(tokens, pd.Series)
-    tqdm.pandas()
+    @abstractmethod
+    def getDominantTopics(self):
+        pass
 
-    stopwords = nltk.corpus.stopwords.words('english')
-    stopwords.extend(['could', 'also', 'get', 'use', 'us', 'since', 'would', 'may', 'however', 'well', 'must',
-                      'much', 'even', 'like', 'many', 'one', 'two', 'new', 'every', 'recommends',
-                      'large', 'less', 'more', 'though', 'yet', 'make', 'three', 'getabstract', 'look', 'loops', 'mid',
-                      'moreover', 'mature', 'nonetheless', 'ie', 'eg', 'vs', 'per'])
+    @abstractmethod
+    def getSingleDominantTopic(self):
+        pass
 
-    logging.info("Getting useful words: dropping stopwords, punctuation, non-alpha and tokens with only one letter.")
-    docs = tokens.progress_apply(lambda x: getUsefulWords(x, stopwords))
+    @abstractmethod
+    def getDominantDocuments(self):
+        pass
 
-    logging.info("Getting bigrams.")
-    bigramModel = gensim.models.Phrases(docs, min_count=5)
-    bigrams = docs.progress_apply(lambda x: np.array([token for token in bigramModel[x] if '_' in token]))
+class LDA(TopicModel):
+    def __init__(self):
+        super().__init__()
 
-    return docs.apply(list) + bigrams.apply(list)
+    def getDominantTopics(self):
+        pass
 
-def getUsefulWords(tokens, stopwords):
-    lemmas = np.array([token.lemma_.lower() for token in tokens])
-    maskStopwords = np.array([lemma not in stopwords for lemma in lemmas], dtype=bool)
-    maskPunctuation = np.array([lemma not in string.punctuation for lemma in lemmas], dtype=bool) # Unnecessary?
-    maskNumeric = np.array([lemma.isalpha() for lemma in lemmas], dtype=bool)
-    maskLength = np.array([len(lemma) > 1 for lemma in lemmas], dtype=bool)
-    return lemmas[maskStopwords & maskPunctuation & maskNumeric & maskLength]
+    def getSingleDominantTopic(self):
+        pass
 
-def getNounChunks(docText, stopwords):
-    chunksAsText = np.array([chunk.text for chunk in docText.noun_chunks if len(chunk) > 1])
-    chunksAsSpan = [chunk for chunk in docText.noun_chunks if len(chunk) > 1]
-    maskChunksStopwords = np.array([all(ch.text not in stopwords for ch in chunk) for chunk in chunksAsSpan],
-                                   dtype=bool)
-    maskChunksNumeric = np.array([all(ch.text.isalpha() for ch in chunk) for chunk in chunksAsSpan], dtype=bool)
-    return chunksAsText[maskChunksStopwords & maskChunksNumeric]
+    def getDominantDocuments(self):
+        pass
 
+    raise NotImplementedError
+
+class HDP(TopicModel):
+    def __init__(self):
+        super().__init__()
+
+    def getDominantTopics(self):
+        pass
+
+    def getSingleDominantTopic(self):
+        pass
+
+    def getDominantDocuments(self):
+        pass
+
+    raise NotImplementedError
 
 
 

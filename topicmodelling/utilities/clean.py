@@ -13,8 +13,10 @@ import logging
 import re
 import pint
 import string
-import spacy
-nlp = spacy.load("en_core_web_sm")
+from tqdm import tqdm
+import nltk
+import gensim
+import numpy as np
 
 REGEX_PATTERNS = {
     'compoundedWords': re.compile(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))'),
@@ -97,5 +99,37 @@ def isHygienic(text):
         return False
     return True
 
+def cleanTokens(tokens):
+    assert isinstance(tokens, pd.Series)
+    tqdm.pandas()
 
+    stopwords = nltk.corpus.stopwords.words('english')
+    stopwords.extend(['could', 'also', 'get', 'use', 'us', 'since', 'would', 'may', 'however', 'well', 'must',
+                      'much', 'even', 'like', 'many', 'one', 'two', 'new', 'every', 'recommends',
+                      'large', 'less', 'more', 'though', 'yet', 'make', 'three', 'getabstract', 'look', 'loops', 'mid',
+                      'moreover', 'mature', 'nonetheless', 'ie', 'eg', 'vs', 'per'])
 
+    logging.info("Getting useful words: dropping stopwords, punctuation, non-alpha and tokens with only one letter.")
+    docs = tokens.progress_apply(lambda x: getUsefulTokens(x, stopwords))
+
+    logging.info("Getting bigrams.")
+    bigramModel = gensim.models.Phrases(docs, min_count=5)
+    bigrams = docs.progress_apply(lambda x: np.array([token for token in bigramModel[x] if '_' in token]))
+
+    return docs.apply(list) + bigrams.apply(list)
+
+def getUsefulTokens(tokens, stopwords):
+    lemmas = np.array([token.lemma_.lower() for token in tokens])
+    maskStopwords = np.array([lemma not in stopwords for lemma in lemmas], dtype=bool)
+    maskPunctuation = np.array([lemma not in string.punctuation for lemma in lemmas], dtype=bool) # Unnecessary?
+    maskNumeric = np.array([lemma.isalpha() for lemma in lemmas], dtype=bool)
+    maskLength = np.array([len(lemma) > 1 for lemma in lemmas], dtype=bool)
+    return lemmas[maskStopwords & maskPunctuation & maskNumeric & maskLength]
+
+def getNounChunks(docText, stopwords):
+    chunksAsText = np.array([chunk.text for chunk in docText.noun_chunks if len(chunk) > 1])
+    chunksAsSpan = [chunk for chunk in docText.noun_chunks if len(chunk) > 1]
+    maskChunksStopwords = np.array([all(ch.text not in stopwords for ch in chunk) for chunk in chunksAsSpan],
+                                   dtype=bool)
+    maskChunksNumeric = np.array([all(ch.text.isalpha() for ch in chunk) for chunk in chunksAsSpan], dtype=bool)
+    return chunksAsText[maskChunksStopwords & maskChunksNumeric]

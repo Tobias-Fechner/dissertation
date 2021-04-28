@@ -41,7 +41,8 @@ def dropSpecialChars(text):
     pattern = REGEX_PATTERNS['specialCharacters']
     logging.info(f"Dropped special characters: {len(pattern.findall(text))}. (Does not include dash, which is handled separately.)")
     t = pattern.sub('', text)
-    return re.sub(' – ', ' ', t)
+    tt = re.sub(' – ', ' ', t)
+    return re.sub('\u2019', '', tt)
 
 def dropUnits(text):
     pattern = REGEX_PATTERNS['units']

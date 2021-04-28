@@ -56,7 +56,7 @@ class Corpus:
     def updateDictionary(self, tokensProcessed):
         self.dictionary = gensim.corpora.dictionary.Dictionary(tokensProcessed)
 
-        # Filter out words that occur in no less than 10 documents, or more than 50% of the documents.
+        # Filter out words that occur in less than 3 documents, or more than 60% of the documents.
         self.dictionary.filter_extremes(no_below=3, no_above=0.6)
         return
 
@@ -111,7 +111,8 @@ def cleanTokens(tokens):
     stopwords = nltk.corpus.stopwords.words('english')
     stopwords.extend(['could', 'also', 'get', 'use', 'us', 'since', 'would', 'may', 'however', 'well', 'must',
                       'much', 'even', 'like', 'many', 'one', 'two', 'new', 'every', 'recommends',
-                      'large', 'less', 'more', 'though', 'yet', 'make', 'three', 'getabstract'])
+                      'large', 'less', 'more', 'though', 'yet', 'make', 'three', 'getabstract', 'look', 'loops', 'mid',
+                      'moreover', 'mature', 'nonetheless', 'ie', 'eg', 'vs', 'per'])
 
     logging.info("Getting useful words: dropping stopwords, punctuation, non-alpha and tokens with only one letter.")
     docs = tokens.progress_apply(lambda x: getUsefulWords(x, stopwords))
@@ -125,7 +126,7 @@ def cleanTokens(tokens):
 def getUsefulWords(tokens, stopwords):
     lemmas = np.array([token.lemma_.lower() for token in tokens])
     maskStopwords = np.array([lemma not in stopwords for lemma in lemmas], dtype=bool)
-    maskPunctuation = np.array([lemma not in string.punctuation for lemma in lemmas], dtype=bool)
+    maskPunctuation = np.array([lemma not in string.punctuation for lemma in lemmas], dtype=bool) # Unnecessary?
     maskNumeric = np.array([lemma.isalpha() for lemma in lemmas], dtype=bool)
     maskLength = np.array([len(lemma) > 1 for lemma in lemmas], dtype=bool)
     return lemmas[maskStopwords & maskPunctuation & maskNumeric & maskLength]

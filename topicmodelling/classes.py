@@ -27,6 +27,7 @@ class Corpus:
         self.data = None
         self.dictionary = None
         self.location = None
+        self.topics = None
 
     def addData(self, source='ga', sourceType='api'):
 
@@ -104,51 +105,161 @@ class Corpus:
         })
         return
 
+    def instantiateTopicsTable(self, model):
+        keywords = []
+
+        for topicID in range(model.num_topics):
+            topWords = [n[0] for n in model.show_topic(int(topicID), topn=5)]
+            keywords.append(topWords)
+
+        self.topics = pd.DataFrame(index=range(model.num_topics), data={'keywords': keywords})
+        return
+
 class TopicModel(ABC):
-    def __init__(self):
+    def __init__(self, modelName):
+        self.modelName = modelName
         self.model = None
 
     @abstractmethod
-    def getDominantTopics(self):
+    def _getDominantTopics(self, topicPD):
         pass
 
     @abstractmethod
-    def getSingleDominantTopic(self):
+    def _getSingleDominantTopic(self, topicPD):
         pass
 
     @abstractmethod
-    def getDominantDocuments(self):
+    def _getDominantDocument(self, corpus, wantedTopic):
         pass
+
+    @abstractmethod
+    def _getTopicProbabilityDistributions(self, dtm):
+        pass
+
+    def applyDominantTopics(self, corpus):
+        if not 'topicPD' in corpus.data.columns:
+            print("Missing topic probability distributions. Generating column now.")
+            corpus = self.applyTopicProbabilityDistributions(corpus)
+
+        if 'dominantTopics' in corpus.data.columns:
+            print("Dominant topics already in corpus data.")
+            return corpus
+        else:
+            corpus.data.insert(len(corpus.data.columns),
+                               'dominantTopics',
+                               corpus.data.topicPD.apply(lambda x: self._getDominantTopics(x)))
+            return corpus
+
+    def applySingleDominantTopic(self, corpus):
+        if not 'topicPD' in corpus.data.columns:
+            print("Missing topic probability distributions. Generating column now.")
+            corpus = self.applyTopicProbabilityDistributions(corpus)
+
+        if 'singleDominantTopic' in corpus.data.columns:
+            print("Single dominant topic already in corpus data.")
+            return
+        else:
+            corpus.data.insert(len(corpus.data.columns),
+                               'singleDominantTopic',
+                               corpus.data.topicPD.apply(lambda x: self._getSingleDominantTopic(x)))
+            return corpus
+
+    def applyDominantDocument(self, corpus):
+        try:
+            assert corpus.topics
+        except AssertionError:
+            print("No topics table found. Creating now.")
+            corpus.instantiateTopicsTable(self.model)
+
+        if 'strongestDoc' in corpus.data.columns:
+            print("Strongest document already in topics data.")
+            return corpus
+        else:
+            corpus.topics.insert(len(corpus.topics.columns),
+                                 'strongestDoc',
+                                 pd.Series(range(len(corpus.topics))).apply(lambda x: self._getDominantDocument(corpus.data.topicPD, x)))
+            return corpus
+
+    def applyTopicProbabilityDistributions(self, corpus):
+        if not 'dtm' in corpus.data.columns:
+            print("Data incomplete. Must have column 'dtm'.")
+            return
+        else:
+            corpus.data.insert(len(corpus.data.columns),
+                               'topicPD',
+                               corpus.data.dtm.apply(lambda x: self._getTopicProbabilityDistributions(x)))
+            return corpus
 
 class LDA(TopicModel):
     def __init__(self):
-        super().__init__()
+        super().__init__('LDA')
 
-    def getDominantTopics(self):
-        pass
+    def instantiateModel(self, corpus, num_topics=20):
+        self.model = gensim.models.ldamodel.LdaModel(corpus=corpus.data.dtm,
+                                                     id2word=corpus.dictionary,
+                                                     num_topics=num_topics,
+                                                     random_state=100,
+                                                     update_every=1,
+                                                     chunksize=20,
+                                                     passes=50,
+                                                     alpha='symmetric',
+                                                     iterations=100,
+                                                     per_word_topics=True)
+        return
 
-    def getSingleDominantTopic(self):
-        pass
+    def _getTopicProbabilityDistributions(self, dtm):
+        return self.model.get_document_topics(dtm, minimum_probability=0.005)
 
-    def getDominantDocuments(self):
-        pass
+    def _getDominantTopics(self, topicPD, threshold=0.9):
+        # Sort topics by greatest probabilities
+        sortedByProb = np.array(sorted(topicPD, key=lambda x: x[1], reverse=True))
 
-    raise NotImplementedError
+        # Generate cumulative sum of topic probabilities
+        cs = np.cumsum([i[1] for i in sortedByProb], axis=0)
+
+        # Return list of dominant topics
+        dominants = sortedByProb[:np.argmax(cs>threshold)+1]
+
+        result = []
+
+        for topicID, probability in dominants:
+            topWords = [n[0] for n in self.model.show_topic(int(topicID), topn=6)]
+            result.append((int(topicID), round(probability, 3), topWords))
+
+        return result
+
+    def _getSingleDominantTopic(self, topicPD):
+
+        # Sort topics by greatest probabilities
+        sortedByProb = sorted(topicPD, key=lambda x: x[1], reverse=True)
+
+        return sortedByProb[0][0], sortedByProb[0][1]
+
+    def _getDominantDocument(self, topicPDs, wantedTopic):
+        wantedTopicProbs = topicPDs.apply(lambda x: [a[1] for a in x if a[0] == wantedTopic])
+        if wantedTopicProbs.apply(len).sum() == 0:
+            return
+        else:
+            nonZerosUnpacked = wantedTopicProbs[wantedTopicProbs.apply(len) != 0].apply(lambda x: x[0])
+            return nonZerosUnpacked.idxmax(), nonZerosUnpacked.max()
 
 class HDP(TopicModel):
     def __init__(self):
-        super().__init__()
+        super().__init__('HDP')
+        raise NotImplementedError
 
-    def getDominantTopics(self):
+    def _getTopicProbabilityDistributions(self, dtm):
         pass
 
-    def getSingleDominantTopic(self):
+    def _getDominantTopics(self, topicPD):
         pass
 
-    def getDominantDocuments(self):
+    def _getSingleDominantTopic(self, topicPD):
         pass
 
-    raise NotImplementedError
+    def _getDominantDocument(self, corpus, wantedTopic):
+        pass
+
 
 
 

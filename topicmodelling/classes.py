@@ -119,6 +119,7 @@ class TopicModel(ABC):
     def __init__(self, modelName):
         self.modelName = modelName
         self.model = None
+        self.num_topics = None
 
     @abstractmethod
     def _getDominantTopics(self, topicPD):
@@ -134,6 +135,10 @@ class TopicModel(ABC):
 
     @abstractmethod
     def _getTopicProbabilityDistributions(self, dtm):
+        pass
+
+    @abstractmethod
+    def instantiateModel(self, corpus):
         pass
 
     def applyDominantTopics(self, corpus):
@@ -169,7 +174,7 @@ class TopicModel(ABC):
             assert corpus.topics
         except AssertionError:
             print("No topics table found. Creating now.")
-            corpus.instantiateTopicsTable(self.model)
+            corpus.instantiateTopicsTable(self)
 
         if 'strongestDoc' in corpus.data.columns:
             print("Strongest document already in topics data.")
@@ -195,6 +200,12 @@ class LDA(TopicModel):
         super().__init__('LDA')
 
     def instantiateModel(self, corpus, num_topics=20):
+        try:
+            assert 'dtm' in corpus.data.columns
+        except AssertionError:
+            print("Corpus data incomplete. Missing 'dtm' column.")
+            return
+
         self.model = gensim.models.ldamodel.LdaModel(corpus=corpus.data.dtm,
                                                      id2word=corpus.dictionary,
                                                      num_topics=num_topics,
@@ -205,6 +216,8 @@ class LDA(TopicModel):
                                                      alpha='symmetric',
                                                      iterations=100,
                                                      per_word_topics=True)
+
+        self.num_topics = self.model.num_topics
         return
 
     def _getTopicProbabilityDistributions(self, dtm):
@@ -246,7 +259,22 @@ class LDA(TopicModel):
 class HDP(TopicModel):
     def __init__(self):
         super().__init__('HDP')
-        raise NotImplementedError
+
+    def instantiateModel(self, corpus):
+        try:
+            assert 'dtm' in corpus.data.columns
+        except AssertionError:
+            print("Corpus data incomplete. Missing 'dtm' column.")
+            return
+
+        self.model = gensim.models.hdpmodel.HdpModel(corpus=corpus.data.dtm.to_list(),
+                                                     id2word=corpus.dictionary,
+                                                     random_state=50,
+                                                     chunksize=30,
+                                                     max_chunks=600)
+
+        self.num_topics = len(self.model.print_topics(-1))
+        return
 
     def _getTopicProbabilityDistributions(self, dtm):
         pass

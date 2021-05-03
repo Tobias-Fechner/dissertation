@@ -133,3 +133,6 @@ def getNounChunks(docText, stopwords):
                                    dtype=bool)
     maskChunksNumeric = np.array([all(ch.text.isalpha() for ch in chunk) for chunk in chunksAsSpan], dtype=bool)
     return chunksAsText[maskChunksStopwords & maskChunksNumeric]
+
+
+

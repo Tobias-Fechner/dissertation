@@ -2,6 +2,7 @@ import topicmodelling.utilities.cleaning
 import topicmodelling.utilities.evaluating
 import topicmodelling.utilities.plotting
 import apiIntegrations.utilities
+import networking.utilities
 
 import pandas as pd
 import numpy as np
@@ -10,6 +11,7 @@ from abc import ABC, abstractmethod
 
 import pathlib, logging
 import spacy, gensim, tomotopy
+import pathlib
 
 def getTokens(texts):
     assert isinstance(texts, pd.Series)
@@ -108,26 +110,17 @@ class Corpus:
         })
         return
 
-    def getTopicsTable(self, topicmodel, numWords=10):
+    def getTopicsTable(self, topicmodel, numKeyTokens=10):
         assert isinstance(topicmodel, TopicModel), "Should pass in an instance of our own customer TopicModel class, not an actual model."
-        keywords = []
-        explainedProbs = []
-        tokenPDs = []
+        topicsData = [topicmodel.getTopic(self, int(topicID), numKeyTokens=numKeyTokens) for topicID in range(topicmodel.num_topics)]
+        self.topics = pd.DataFrame(columns=['keyTokens', 'explainedProb', 'tokenPDs'], data=topicsData)
+        return
 
-        for topicID in range(topicmodel.num_topics):
-            topic = topicmodel.getTopic(int(topicID), numWords=numWords)
-            topWords = [n[0] for n in topic]
-            # noinspection PyUnresolvedReferences
-            explainedProb = np.sum([n[1] for n in topic])
-            keywords.append(topWords)
-            explainedProbs.append(explainedProb)
-            tokenPDs.append(topicmodel.applyTopicTokenPD(self))
+    def getTopicNetworkingData(self, maxDistance=0.4):
+        assert 'tokenPDs' in self.topics.columns, "Data incomplete. Must contain column for token probability distributions 'tokenPDs'."
 
-        self.topics = pd.DataFrame(index=range(topicmodel.num_topics), data={
-            'keywords': keywords,
-            'explainedProb': explainedProbs,
-            'tokenPDs': tokenPDs,
-        })
+        self.topics['topicDistances'] = self.topics.apply(lambda x: networking.utilities.getHellingerDistances(x, self.topics, maxDistance=maxDistance), axis=1)
+        self.topics['degree'] = self.topics.topicDistances.apply(len)
         return
 
 class TopicModel(ABC):
@@ -153,15 +146,18 @@ class TopicModel(ABC):
         pass
 
     @abstractmethod
-    def _getTopicTokenPD(self, corpus):
-        pass
-
-    @abstractmethod
     def instantiateModel(self, corpus):
         pass
 
     @abstractmethod
-    def getTopic(self, topicID, numWords=10):
+    def getTopic(self, corpus, topicID, numKeyTokens=10):
+        """
+        Takes in topic ID, and number of key tokens to show, and return tuple of (keyTokens, explainedProbability, tokenPD)
+        :param corpus:
+        :param topicID: integer topicID
+        :param numKeyTokens: number of key tokens to show
+        :return: tuple of (keyTokens, explainedProbability, tokenPD)
+        """
         pass
 
     def applyDominantTopics(self, corpus):
@@ -216,16 +212,6 @@ class TopicModel(ABC):
             corpus.data.insert(len(corpus.data.columns),
                                'topicPD',
                                corpus.data.dtm.apply(lambda x: self._getDocumentTopicPD(x)))
-            return corpus
-
-    def applyTopicTokenPD(self, corpus):
-        if 'tokenPD' in corpus.topics.columns:
-            print("Token PD already in data.")
-            return
-        else:
-            corpus.topics.insert(len(corpus.topics.columns),
-                                 'tokenPD',
-                                 self._getTopicTokenPD(corpus))
             return corpus
 
 class LDA(TopicModel):
@@ -289,8 +275,9 @@ class LDA(TopicModel):
             nonZerosUnpacked = wantedTopicProbs[wantedTopicProbs.apply(len) != 0].apply(lambda x: x[0])
             return nonZerosUnpacked.idxmax(), nonZerosUnpacked.max()
 
-    def getTopic(self, topicID, numWords=10):
-        return self.model.show_topic(topicID, topn=numWords)
+    def getTopic(self, corpus, topicID, numKeyTokens=10):
+        #TODO: Update to match new pattern - :return: tuple of (keyTokens, explainedProbability, tokenPD)
+        return self.model.show_topic(topicID, topn=numKeyTokens)
 
 class HDP(TopicModel):
     def __init__(self):
@@ -348,14 +335,18 @@ class HDP(TopicModel):
             nonZerosUnpacked = wantedTopicProbs[wantedTopicProbs.apply(len) != 0].apply(lambda x: x[0])
             return nonZerosUnpacked.idxmax(), nonZerosUnpacked.max()
 
-    def getTopic(self, topicID, numWords=10):
-        return self.model.show_topic(topicID, topn=numWords)
+    def getTopic(self, corpus, topicID, numKeyTokens=10):
+        #TODO: Update to match new pattern - :return: tuple of (keyTokens, explainedProbability, tokenPD)
+        return self.model.show_topic(topicID, topn=numKeyTokens)
 
 class TomotopyHDP(TopicModel):
     def __init__(self, modelName):
         super().__init__(modelName)
+        self.initialK = None
+        self.totalIterations = 0
 
     def instantiateModel(self, corpus, gamma=1, alpha=0.3, initial_k=100):
+        self.initialK = initial_k
         self.model = tomotopy.HDPModel(min_cf=5, rm_top=10, gamma=gamma, alpha=alpha, initial_k=initial_k)
         self.num_topics = len(self.model.get_count_by_topics())
         for doc in corpus.data.tokensProcessed:
@@ -364,6 +355,34 @@ class TomotopyHDP(TopicModel):
         self.model.burn_in = 100
         self.model.train(0)
         print('Removed top words:', self.model.removed_top_words)
+        return
+
+    def saveModel(self):
+        modelDir = r"C:\Users\Tobias Fechner\Documents\1_Uni\fyp\git_repo_fyp\models"
+        fileName = f"{self.modelName}_{self.initialK}_{self.totalIterations}_{self.num_topics}.bin"
+        self.model.save(str(pathlib.Path(modelDir, fileName)))
+        print(f"Model saved to: {pathlib.Path(modelDir, fileName)}")
+        return
+
+    def loadModel(self):
+        modelDir = pathlib.Path(r"C:\Users\Tobias Fechner\Documents\1_Uni\fyp\git_repo_fyp\models")
+        availableFiles = [(count, f"{count}: {str(filePath.stem)}") for count, filePath in
+                          enumerate(modelDir.iterdir())]
+        print("\n".join(list(zip(*availableFiles))[1]))
+
+        selection = '-1'
+
+        while int(selection) not in list(zip(*availableFiles))[0]:
+            print("Specify model to select by number ('esc' to break):")
+            selection = input("--> ")
+            if selection == 'esc':
+                selection = ''
+                break
+
+        self.model = tomotopy.HDPModel.load(str(list(modelDir.iterdir())[int(selection)]))
+        self.num_topics = len(self.model.get_count_by_topics())
+        self.model.burn_in = 100
+
         return
 
     def _getDominantTopics(self, topicPD):
@@ -378,12 +397,20 @@ class TomotopyHDP(TopicModel):
     def _getDocumentTopicPD(self, dtm):
         pass
 
-    def getTopic(self, topicID, numWords=10):
-        topic = self.model.get_topic_words(topicID, top_n=numWords)
+    def getTopic(self, corpus, topicID, numKeyTokens=10, numTokenPDs=40):
+        # Tomotopy return list of [(token, prob), (token, prob), ...] tuples
+        tokenPDs = self.model.get_topic_words(topicID, top_n=numTokenPDs)
 
+        keyTokens, probs = zip(*tokenPDs)
+        tokenIDs = [corpus.dictionary.token2id[token] for token in keyTokens]
+
+        # noinspection PyUnresolvedReferences
+        return keyTokens[:numKeyTokens], np.sum(probs[:numKeyTokens]), list(zip(tokenIDs, probs))
 
     def train(self, corpus, iterations=1000, chunkSize=100, evalWith='c_v', evaluate=False, printDuring=False):
         assert evalWith in ('u_mass', 'c_v', 'c_uci', 'c_npmi'), "Must specify a coherence measure from the list ('u_mass', 'c_v', 'c_uci', 'c_npmi')."
+
+        self.totalIterations += iterations
 
         tracking = ['Number of Topics', 'Log Likelihood']
         if evaluate:
@@ -393,8 +420,7 @@ class TomotopyHDP(TopicModel):
         for tr in tracking:
             results[tr] = []
 
-        corpus.updateDictionary()
-        corpus.getTopicsTable(self, numWords=40)
+        corpus.getTopicsTable(self, numKeyTokens=40)
 
         for chunk in tqdm(np.full((int(iterations/chunkSize),), chunkSize, dtype=int)):
 
@@ -413,13 +439,5 @@ class TomotopyHDP(TopicModel):
         self.num_topics = self.model.live_k
 
         return results
-
-    @staticmethod
-    def _getTokenIDPD(tokenPDs, corpus):
-        return [(corpus.dictionary.token2id[token], PD) for token, PD in tokenPDs]
-
-    def _getTopicTokenPD(self, corpus):
-        termPDs = corpus.topics.index.to_series().apply(lambda x: self.getTopic(x, numWords=40))
-        return termPDs.apply(lambda x: self._getTokenIDPD(x, corpus))
 
 

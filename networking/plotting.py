@@ -6,6 +6,13 @@ def getLayoutFunc(layout='spring'):
     layoutGenerator = {
         'spring': lambda x: nx.spring_layout(x),
         'circular': lambda x: nx.circular_layout(x),
+        'kamada': lambda x: nx.kamada_kawai_layout(x),
+        'planar': lambda x: nx.planar_layout(x),
+        'random': lambda x: nx.random_layout(x),
+        'shell': lambda x: nx.shell_layout(x),
+        'spectral': lambda x: nx.spectral_layout(x),
+        'spiral': lambda x: nx.spiral_layout(x),
+        'multipartite': lambda x: nx.multipartite_layout(x),
     }
 
     assert layout in layoutGenerator.keys(), f"Passed layout string not in {layoutGenerator.keys()}"

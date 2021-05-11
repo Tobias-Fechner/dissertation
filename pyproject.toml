@@ -23,6 +23,8 @@ networkx = "^2.5"
 pyLDAvis = "^3.3.1"
 plotly = "^4.14.3"
 tomotopy = "^0.12.0"
+pyarrow = "^4.0.0"
+fastparquet = "^0.5.0"
 
 [tool.poetry.dev-dependencies]
 

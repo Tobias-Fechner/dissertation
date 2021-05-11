@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 
-import pathlib, logging
+import logging
 import spacy, gensim, tomotopy
 import pathlib
 
@@ -280,10 +280,11 @@ class LDA(TopicModel):
         return self.model.show_topic(topicID, topn=numKeyTokens)
 
 class HDP(TopicModel):
-    def __init__(self):
+    def __init__(self, corpus, randomState, chunkSize, maxChunks):
         super().__init__('HDP')
+        self.instantiateModel(corpus, randomState=randomState, chunkSize=chunkSize, maxChunks=maxChunks)
 
-    def instantiateModel(self, corpus):
+    def instantiateModel(self, corpus, randomState=50, chunkSize=30, maxChunks=600):
         try:
             assert 'dtm' in corpus.data.columns
         except AssertionError:
@@ -292,9 +293,9 @@ class HDP(TopicModel):
 
         self.model = gensim.models.hdpmodel.HdpModel(corpus=corpus.data.dtm.to_list(),
                                                      id2word=corpus.dictionary,
-                                                     random_state=50,
-                                                     chunksize=30,
-                                                     max_chunks=600)
+                                                     random_state=randomState,
+                                                     chunksize=chunkSize,
+                                                     max_chunks=maxChunks)
 
         self.num_topics = len(self.model.get_topics())
         return
@@ -336,8 +337,11 @@ class HDP(TopicModel):
             return nonZerosUnpacked.idxmax(), nonZerosUnpacked.max()
 
     def getTopic(self, corpus, topicID, numKeyTokens=10):
-        #TODO: Update to match new pattern - :return: tuple of (keyTokens, explainedProbability, tokenPD)
-        return self.model.show_topic(topicID, topn=numKeyTokens)
+        keyTokens, probs = zip(*self.model.show_topic(topicID))
+        tokenIDs = [corpus.dictionary.token2id[token] for token in keyTokens]
+
+        # noinspection PyUnresolvedReferences
+        return keyTokens[:numKeyTokens], np.sum(probs[:numKeyTokens]), list(zip(tokenIDs, probs))
 
 class TomotopyHDP(TopicModel):
     def __init__(self, modelName):
@@ -385,8 +389,24 @@ class TomotopyHDP(TopicModel):
 
         return
 
-    def _getDominantTopics(self, topicPD):
-        pass
+    # noinspection PyUnresolvedReferences
+    def _getDominantTopics(self, topicPD, threshold=0.9):
+        # Sort topics by greatest probabilities
+        sortedByProb = np.array(sorted(topicPD, key=lambda x: x[1], reverse=True))
+
+        # Generate cumulative sum of topic probabilities
+        cs = np.cumsum([i[1] for i in sortedByProb], axis=0)
+
+        # Return list of dominant topics
+        dominants = sortedByProb[:np.argmax(cs>threshold)+1]
+
+        result = []
+
+        for topicID, probability in dominants:
+            topWords = [n[0] for n in self.model.get_topic_words(int(topicID), top_n=6)]
+            result.append((int(topicID), round(probability, 3), topWords))
+
+        return result
 
     def _getSingleDominantTopic(self, topicPD):
         pass

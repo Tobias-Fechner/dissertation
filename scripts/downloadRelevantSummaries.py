@@ -4,7 +4,7 @@ Script uses getAbstract api to download summaries, based on key terms provided b
 
 import apiIntegrations.ga
 import apiIntegrations.utilities
-import topicmodelling.utilities.clean
+import topicmodelling.utilities.cleaning
 
 print("Getting token.")
 token = apiIntegrations.ga.getToken()
@@ -25,7 +25,7 @@ mask = apiIntegrations.ga.getChannelsMask(channels.index, summaries['channels'],
 
 data = summaries.loc[mask]
 data['textHtml'] = apiIntegrations.ga.addIntroToContent(data)
-data['text'] = topicmodelling.utilities.clean.cleanHTML(data['textHtml'])
+data['text'] = topicmodelling.utilities.cleaning.cleanHTML(data['textHtml'])
 
 print("Please enter a filename for the data collection.")
 fileName = input("-->")

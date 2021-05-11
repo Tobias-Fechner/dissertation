@@ -6,6 +6,7 @@ import pandas as pd
 import http.client
 import math
 from tqdm import tqdm
+import ast
 
 def getRequestURLStore():
     urlStore = {
@@ -189,4 +190,9 @@ def getAllSummaries(sample=False):
 
 def addIntroToContent(data):
     return data.apply(lambda x: x['introHtml'] + x['contentHtml'], axis=1)
+
+def extractYearPublished(src):
+    srcConverted = src.apply(lambda x: ast.literal_eval(x))
+    return srcConverted.apply(lambda x: x['year'])
+
 

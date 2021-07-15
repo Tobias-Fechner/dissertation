@@ -1,2 +1,8 @@
-# fyp
-Predicting emerging markets
+# A Novel Approach to Topic Evolution
+The project objectives were to demonstrate how topic modelling could be used to generate a network graph representation of topics to be used as a statistical layer upon which to train a predictive model. 
+
+A multi-package project was developed in Python that allowed for component parts to be easily interchanged and explored. Results were generated in a Jupyter Notebook for repeatability and demonstration purposes. The final code base included classes for several topic model variants, and a network model, including functionality to integrate the two class types. Two topic models – Latent Dirichlet Allocation and Hierarchical Dirichlet Process – were trained on two corpora of book summaries (length 142 and 1,996 documents), retrieved using an API provided by getAbstract. Outputs from both models were used to generate a static network of connected topics, using the Hellinger Distance metric to measure topic similarity, and were visualised on an interactive plot. A HDP model was trained on the larger corpus to demonstrate a dynamic topic network, and the implications of these results were used to propose how a prediction model would be trained to predict document influence and forecast topic trends. 
+
+The direct integration of topic modelling and network analytics – with continuity of the same data – was not expected to be achieved during the course of the project, and results encourage further development. 
+
+Although a prediction model was not implemented, a comprehensive review of component parts has been used to detail a final design for the integration of the three technologies.
